@@ -4,7 +4,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 # ---------- GROQ CONFIG ----------
-API_KEY = os.getenv("GROQ_API_KEY")
+client = Groq(api_key="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")
+
 # ---------- LOAD JSON ----------
 with open("recommendation.json", "r") as f:
     data = json.load(f)
