@@ -1,0 +1,311 @@
+#define BLYNK_TEMPLATE_ID "TMPL3DKswKhDH"
+#define BLYNK_TEMPLATE_NAME "SMART AGRI DASHBOARD"
+#define BLYNK_AUTH_TOKEN "BMMdpSQNtaxnS_XMk7vfO6Ju6XkLg8ZJ"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <LiquidCrystal_I2C.h> 
+#include <Wire.h>
+#include <GP2YDustSensor.h>
+
+char ssid[] = "electronics";
+char pass[] = "wifihotspot";
+
+const int pump_water  = 33;
+const int pump_distribute  = 26;
+const int pump_chemical  = 14;
+const int solinoid2  = 25;
+const int solinoid1  = 27;
+const int sw_pin  = 32;
+
+const uint8_t SHARP_LED_PIN = 4;   // Sharp Dust/particle sensor Led Pin
+const uint8_t SHARP_VO_PIN = 35;    // Sharp Dust/particle analog out pin used for reading
+
+GP2YDustSensor dustSensor(GP2YDustSensorType::GP2Y1014AU0F, SHARP_LED_PIN, SHARP_VO_PIN);
+
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Adjust I2C address if needed (0x27 is common)
+
+int samplingTime = 280; // time required to sample signal coming out of the sensor
+int deltaTime = 40; //
+int sleepTime = 9680;
+float voMeasured = 0;
+float calcVoltage = 0;
+float dustDensity = 0;
+
+int n1,n2,ht,phv,tempv,tempvv,t,gas,s,u,nvalue,pvalue,kvalue,nph1,nph2,sw;
+float ph;
+
+char rx[150],x;
+String phstr;
+boolean f1,f2;
+
+void setup() 
+{
+  Serial.begin(9600);
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass); // Connects to WiFi and Blynk
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("connect wifi:");
+  lcd.setCursor(0, 1);
+  lcd.print("waiting.........");
+  dustSensor.begin();
+
+  pinMode(pump_water, OUTPUT);
+  pinMode(pump_distribute, OUTPUT);
+  pinMode(pump_chemical, OUTPUT);
+  pinMode(solinoid1, OUTPUT);
+  pinMode(solinoid2, OUTPUT);
+  pinMode(sw_pin, INPUT_PULLUP);
+
+  digitalWrite(pump_water, LOW);
+  digitalWrite(pump_distribute, LOW);
+  digitalWrite(pump_chemical, LOW);
+  digitalWrite(solinoid1, LOW);
+  digitalWrite(solinoid2, LOW);
+  delay(1000);
+  lcd.clear();
+
+}
+
+void loop()
+ {
+  Blynk.run(); // Keep Blynk connected and handle commands
+
+  sw=digitalRead(sw_pin);
+
+  // Serial.print("Dust density: ");
+  // Serial.print(dustSensor.getDustDensity());
+  // Serial.print(" ug/m3; Running average: ");
+  // Serial.print(dustSensor.getRunningAverage());
+  // Serial.println(" ug/m3");
+
+  calcVoltage = voMeasured * (5.0 / 1024.0);
+
+  dustDensity = dustSensor.getDustDensity();
+  // Serial.println(dustDensity);
+  
+  lcd.setCursor(8, 0);
+  lcd.print(" ");
+  lcd.print(t);
+  lcd.print(" ");
+  WriteIntToLCD3digit(dustDensity);
+  // lcd.setCursor(0, 1);
+  // lcd.print(" ");
+  // WriteIntToLCD2digit(nvalue);
+  // lcd.print(" ");
+  // WriteIntToLCD2digit(pvalue);
+  // lcd.print(" ");
+  // WriteIntToLCD2digit(kvalue);
+
+  if(phv<=1400)
+  {
+    ph=phv;
+    lcd.setCursor(0, 0);
+    lcd.print("PH:");
+    WriteIntToLCD2digit(phv/100);
+    lcd.print(".");
+    WriteIntToLCD2digit(phv%100);
+  }
+  if(phv>1400)
+  {
+      lcd.setCursor(0, 0);
+      lcd.print("PH:");
+      lcd.print(".....");
+  } 
+  if (x>5)
+  {
+    n2++;
+    if(n2>5)
+    {
+      n2=0;n1=0;
+    //  Serial.println(rx);
+      phstr=String(rx);
+   //   Serial.println(rx[7]);
+      int k=phstr.indexOf('T');
+      if(k==23)
+      {
+        tempv=(rx[27]-48)*10+(rx[28]-48)*1;
+      }
+      else if(k==24)
+      {
+        tempv=(rx[28]-48)*10+(rx[29]-48)*1;
+      }
+      tempvv=(int)(tempv/2);
+      if(rx[7]!=',')
+      {
+        phv=(rx[3]-48)*1000+(rx[4]-48)*100+(rx[6]-48)*10+(rx[7]-48);
+      }
+      else if(rx[7]==',')
+      {
+        phv=(rx[3]-48)*100+(rx[5]-48)*10+(rx[6]-48)*1;
+      }
+      ph=(float) (phv/100);
+      for(int i=0; i<=19;i++)
+      {
+        rx[i]=0;
+      }
+//      Serial.println(phv);
+//      Serial.println(k);
+//      Serial.println(tempvv);
+      n2=0;x=0;
+    }
+  }
+  if(phv<400 && phv>40 && f1==0)
+  {
+    nph1++;
+    if(nph1>5)
+    {
+      nvalue=phv/2;
+      pvalue=phv/3;
+      kvalue=phv/4+5;
+      Blynk.virtualWrite(V0, ph);
+      Blynk.virtualWrite(V1, nvalue);
+      Blynk.virtualWrite(V2, pvalue);
+      Blynk.virtualWrite(V3, kvalue);
+      s++;
+      lcd.setCursor(2, 1);
+      lcd.print("S:");
+      WriteIntToLCD2digit(s);
+      if(s==1)
+      {
+        digitalWrite(pump_water, HIGH);
+        digitalWrite(pump_chemical, HIGH);
+      }
+      if(s==10)
+      {
+        digitalWrite(pump_chemical, LOW);
+      }
+
+      if(s==15)
+      {
+        digitalWrite(pump_water, LOW);
+      }
+
+      if(s==15)
+      {
+        digitalWrite(solinoid1, HIGH);
+      }
+      if(s==17)
+      {
+        digitalWrite(pump_distribute, HIGH);
+      }
+      if(s==25)
+      {
+        s=0;
+        f1=1;
+        f2=0;
+        digitalWrite(pump_distribute, LOW);
+        digitalWrite(solinoid1, LOW);
+        digitalWrite(pump_water, LOW);
+        digitalWrite(pump_chemical, LOW);
+      }
+    }
+  }
+  if(phv>600  && phv<1100 && f2==0)
+  {
+    nph2++;
+    if(nph2>5)
+    {
+      nvalue=phv/4;
+      pvalue=phv/5;
+      kvalue=phv/6;
+      Blynk.virtualWrite(V0, ph);
+      Blynk.virtualWrite(V1, nvalue);
+      Blynk.virtualWrite(V2, pvalue);
+      Blynk.virtualWrite(V3, kvalue);
+      u++;
+      lcd.setCursor(10, 1);
+      lcd.print("U:");
+      WriteIntToLCD2digit(u);
+    if(u==1)
+    {
+      digitalWrite(pump_water, HIGH);
+      digitalWrite(pump_chemical, HIGH);
+    }
+    if(u==5)
+    {
+      digitalWrite(pump_chemical, LOW);
+    }
+    if(u==10)
+    {
+      digitalWrite(pump_water, LOW);
+    }
+    if(u==11)
+    {
+      digitalWrite(solinoid2, HIGH);
+    }
+    if(u==13)
+    {
+      digitalWrite(pump_distribute, HIGH);
+    }
+    if(u==20)
+    {
+      u=0;
+      f1=0;
+      f2=1;
+      digitalWrite(pump_distribute, LOW);
+      digitalWrite(solinoid2, LOW);
+      digitalWrite(pump_chemical, LOW);
+      digitalWrite(pump_water, LOW);
+    }
+   }  
+  }
+    t++;
+    if (t > 30) 
+    {
+      t = 0;
+      lcd.clear();  
+      lcd.setCursor(0, 1);
+      lcd.print("uploading ");
+      Blynk.virtualWrite(V0, ph);
+      Blynk.virtualWrite(V1, nvalue);
+      Blynk.virtualWrite(V2, pvalue);
+      Blynk.virtualWrite(V3, kvalue);
+      Blynk.virtualWrite(V4, dustDensity);
+      lcd.clear();  
+    }
+  delay(100);
+}
+void WriteIntToLCD4digit(unsigned int dat)
+{
+  lcd.print(dat / 1000);
+  lcd.print((dat % 1000) / 100);
+  lcd.print(((dat % 1000) % 100) / 10);
+  lcd.print(((dat % 1000) % 100) % 10);
+}
+void WriteIntToLCD3digit(unsigned int dat)
+{
+  lcd.print(dat / 100);
+  lcd.print((dat % 100) / 10);
+  lcd.print((dat % 100) % 10);
+}
+void WriteIntToLCD2digit(unsigned int dat)
+{
+  lcd.print(dat / 10);
+  lcd.print(dat % 10);
+}
+
+void serialEvent() 
+{
+  while (Serial.available()) 
+  {
+    char inChar = (char)Serial.read();
+    
+    rx[x]= inChar;
+    if(rx[0]=='P')
+    {
+      x++;
+    }
+    else if(rx[0]!='P')
+    {
+      x=0;
+    }
+    if(x>30)x=30;
+  }
+}
+
+/*
+cifaxot522@keecs.com
+iot@12345
+*/
